@@ -11,11 +11,10 @@ import {
 } from "firebase/firestore";
 
 // Importaciones de componentes personalizados
-import TablaCategorias from "../components/Categorias/TablaCategorias";
-import ModalRegistroCategoria from "../components/Categorias/ModalRegistroCategoria";
-import ModalEdicionCategoria from "../components/Categorias/ModalEdicionCategoria";
-import ModalEliminacionCategoria from "../components/Categorias/ModalEliminacionCategoria";
-
+import TablaCategorias from "../components/categorias/TablaCategorias";
+import ModalRegistroCategoria from "../components/categorias/ModalRegistroCategoria";
+import ModalEdicionCategoria from "../components/categorias/ModalEdicionCategoria";
+import ModalEliminacionCategoria from "../components/categorias/ModalEliminacionCategoria";
 
 const Categorias = () => {
   
