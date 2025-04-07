@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Container, Button, Alert } from "react-bootstrap";
+import { Container, Button, Alert, Form } from "react-bootstrap";
 import { useNavigate } from "react-router-dom";
 import { db, storage } from "../database/firebaseconfig";
 import {
@@ -19,6 +19,7 @@ import { useAuth } from "../database/authcontext";
 
 const Libros = () => {
   const [libros, setLibros] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -58,7 +59,7 @@ const Libros = () => {
     } else {
       fetchData();
     }
-  }, [isLoggedIn, navigate]);
+  }, );
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -187,16 +188,30 @@ const Libros = () => {
     setShowDeleteModal(true);
   };
 
+  // Filtrado de libros según el término de búsqueda
+  const librosFiltrados = libros.filter((libro) =>
+    libro.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
     <Container className="mt-5">
       <br />
       <h4>Gestión de Libros</h4>
       {error && <Alert variant="danger">{error}</Alert>}
+      {/* Cuadro de búsqueda */}
+      <Form.Group className="mb-3" controlId="formSearchLibro">
+        <Form.Control
+          type="text"
+          placeholder="Buscar libro..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </Form.Group>
       <Button className="mb-3" onClick={() => setShowModal(true)}>
         Agregar libro
       </Button>
       <TablaLibros
-        libros={libros}
+        libros={librosFiltrados}
         openEditModal={openEditModal}
         openDeleteModal={openDeleteModal}
       />

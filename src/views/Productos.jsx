@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Container, Button } from "react-bootstrap";
+import { Container, Button, Form } from "react-bootstrap";
 import { db } from "../database/firebaseconfig";
 import {
   collection,
@@ -17,6 +17,7 @@ import ModalEliminacionProducto from "../components/productos/ModalEliminacionPr
 const Productos = () => {
   // Estados para manejo de datos
   const [productos, setProductos] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [categorias, setCategorias] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -60,7 +61,7 @@ const Productos = () => {
   // Hook useEffect para carga inicial de datos
   useEffect(() => {
     fetchData();
-  }, []);
+  }, );
 
   // Manejador de cambios en inputs del formulario de nuevo producto
   const handleInputChange = (e) => {
@@ -155,16 +156,30 @@ const Productos = () => {
     setShowDeleteModal(true);
   };
 
+  // Filtrado de productos según el término de búsqueda
+  const productosFiltrados = productos.filter((producto) =>
+    producto.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   // Renderizado del componente
   return (
     <Container className="mt-5">
       <br />
       <h4>Gestión de Productos</h4>
+      {/* Cuadro de búsqueda */}
+      <Form.Group className="mb-3" controlId="formSearchProducto">
+        <Form.Control
+          type="text"
+          placeholder="Buscar producto..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </Form.Group>
       <Button className="mb-3" onClick={() => setShowModal(true)}>
         Agregar producto
       </Button>
       <TablaProductos
-        productos={productos}
+        productos={productosFiltrados}
         openEditModal={openEditModal}
         openDeleteModal={openDeleteModal}
       />

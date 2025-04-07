@@ -9,6 +9,8 @@ const Catalogo = () => {
   const [productos, setProductos] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState("Todas");
+  // Estado para búsqueda por nombre
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Estados para edición de producto (reutilizados de Productos)
   const [showEditModal, setShowEditModal] = useState(false);
@@ -41,13 +43,18 @@ const Catalogo = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  },);
 
-  // Filtrar productos por categoría
-  const productosFiltrados =
-    categoriaSeleccionada === "Todas"
-      ? productos
-      : productos.filter((producto) => producto.categoria === categoriaSeleccionada);
+  // Filtrar productos por categoría y por término de búsqueda
+  const productosFiltrados = productos
+    .filter((producto) =>
+      categoriaSeleccionada === "Todas"
+        ? true
+        : producto.categoria === categoriaSeleccionada
+    )
+    .filter((producto) =>
+      producto.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
   // Función para abrir el modal de edición
   const openEditModal = (producto) => {
@@ -117,6 +124,18 @@ const Catalogo = () => {
             </Form.Select>
           </Form.Group>
         </Col>
+        {/* Nuevo cuadro de búsqueda */}
+        <Col lg={3} md={3} sm={6}>
+          <Form.Group className="mb-3">
+            <Form.Label>Buscar producto:</Form.Label>
+            <Form.Control
+              type="text"
+              placeholder="Ingresa el nombre..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </Form.Group>
+        </Col>
       </Row>
 
       {/* Catálogo de productos filtrados */}
@@ -130,7 +149,7 @@ const Catalogo = () => {
             />
           ))
         ) : (
-          <p>No hay productos en esta categoría.</p>
+          <p>No hay productos en esta categoría o que coincidan con la búsqueda.</p>
         )}
       </Row>
 

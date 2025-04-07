@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Container, Button } from "react-bootstrap";
+import { Container, Button, Form } from "react-bootstrap";
 import { db } from "../database/firebaseconfig";
 import {
   collection,
@@ -17,9 +17,9 @@ import ModalEdicionCategoria from "../components/categorias/ModalEdicionCategori
 import ModalEliminacionCategoria from "../components/categorias/ModalEliminacionCategoria";
 
 const Categorias = () => {
-  
   // Estados para manejo de datos
   const [categorias, setCategorias] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -50,7 +50,7 @@ const Categorias = () => {
   // Hook useEffect para carga inicial de datos
   useEffect(() => {
     fetchCategorias();
-  }, []);
+  },);
 
   // Manejador de cambios en inputs del formulario de nueva categoría
   const handleInputChange = (e) => {
@@ -128,16 +128,30 @@ const Categorias = () => {
     setShowDeleteModal(true);
   };
 
+  // Filtrado de categorías según el término de búsqueda
+  const categoriasFiltradas = categorias.filter((categoria) =>
+    categoria.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   // Renderizado del componente
   return (
     <Container className="mt-5">
       <br />
       <h4>Gestión de Categorías</h4>
+      {/* Cuadro de búsqueda */}
+      <Form.Group className="mb-3" controlId="formSearchCategoria">
+        <Form.Control
+          type="text"
+          placeholder="Buscar categoría..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </Form.Group>
       <Button className="mb-3" onClick={() => setShowModal(true)}>
         Agregar categoría
       </Button>
       <TablaCategorias
-        categorias={categorias}
+        categorias={categoriasFiltradas}
         openEditModal={openEditModal}
         openDeleteModal={openDeleteModal}
       />
