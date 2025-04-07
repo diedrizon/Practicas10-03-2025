@@ -4,15 +4,19 @@ import { db } from "../database/firebaseconfig";
 import { collection, getDocs, updateDoc, doc } from "firebase/firestore";
 import TarjetaProducto from "../components/catalogo/TarjetaProducto";
 import ModalEdicionProducto from "../components/productos/ModalEdicionProducto";
+import Paginacion from "../components/ordenamiento/Paginacion"; // ✅ Importar paginación
 
 const Catalogo = () => {
   const [productos, setProductos] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState("Todas");
-  // Estado para búsqueda por nombre
   const [searchTerm, setSearchTerm] = useState("");
 
-  // Estados para edición de producto (reutilizados de Productos)
+  // Estados para paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 6; 
+
+  // Estados para edición
   const [showEditModal, setShowEditModal] = useState(false);
   const [productoEditado, setProductoEditado] = useState(null);
 
@@ -21,7 +25,6 @@ const Catalogo = () => {
 
   const fetchData = async () => {
     try {
-      // Obtener productos
       const productosData = await getDocs(productosCollection);
       const fetchedProductos = productosData.docs.map((doc) => ({
         ...doc.data(),
@@ -29,7 +32,6 @@ const Catalogo = () => {
       }));
       setProductos(fetchedProductos);
 
-      // Obtener categorías
       const categoriasData = await getDocs(categoriasCollection);
       const fetchedCategorias = categoriasData.docs.map((doc) => ({
         ...doc.data(),
@@ -45,7 +47,6 @@ const Catalogo = () => {
     fetchData();
   },);
 
-  // Filtrar productos por categoría y por término de búsqueda
   const productosFiltrados = productos
     .filter((producto) =>
       categoriaSeleccionada === "Todas"
@@ -56,13 +57,17 @@ const Catalogo = () => {
       producto.nombre.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-  // Función para abrir el modal de edición
+  // ✅ Aplicar paginación sobre productos filtrados
+  const paginatedProductos = productosFiltrados.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
   const openEditModal = (producto) => {
     setProductoEditado({ ...producto });
     setShowEditModal(true);
   };
 
-  // Función para manejar cambios en los campos del formulario de edición
   const handleEditInputChange = (e) => {
     const { name, value } = e.target;
     setProductoEditado((prev) => ({
@@ -71,7 +76,6 @@ const Catalogo = () => {
     }));
   };
 
-  // Función para manejar el cambio de imagen
   const handleEditImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -86,7 +90,6 @@ const Catalogo = () => {
     }
   };
 
-  // Función para actualizar el producto en Firestore y refrescar los datos
   const handleEditProducto = async () => {
     if (!productoEditado.nombre || !productoEditado.precio || !productoEditado.categoria) {
       alert("Por favor, completa todos los campos requeridos.");
@@ -106,14 +109,17 @@ const Catalogo = () => {
     <Container className="mt-5">
       <br />
       <h4>Catálogo de Productos</h4>
-      {/* Filtro de categorías */}
+
       <Row>
         <Col lg={3} md={3} sm={6}>
           <Form.Group className="mb-3">
             <Form.Label>Filtrar por categoría:</Form.Label>
             <Form.Select
               value={categoriaSeleccionada}
-              onChange={(e) => setCategoriaSeleccionada(e.target.value)}
+              onChange={(e) => {
+                setCategoriaSeleccionada(e.target.value);
+                setCurrentPage(1); // Reiniciar a la primera página al filtrar
+              }}
             >
               <option value="Todas">Todas</option>
               {categorias.map((categoria) => (
@@ -124,7 +130,7 @@ const Catalogo = () => {
             </Form.Select>
           </Form.Group>
         </Col>
-        {/* Nuevo cuadro de búsqueda */}
+
         <Col lg={3} md={3} sm={6}>
           <Form.Group className="mb-3">
             <Form.Label>Buscar producto:</Form.Label>
@@ -132,20 +138,23 @@ const Catalogo = () => {
               type="text"
               placeholder="Ingresa el nombre..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1); // Reiniciar a la primera página al buscar
+              }}
             />
           </Form.Group>
         </Col>
       </Row>
 
-      {/* Catálogo de productos filtrados */}
+      {/* Catálogo de productos paginados */}
       <Row>
-        {productosFiltrados.length > 0 ? (
-          productosFiltrados.map((producto) => (
+        {paginatedProductos.length > 0 ? (
+          paginatedProductos.map((producto) => (
             <TarjetaProducto
               key={producto.id}
               producto={producto}
-              openEditModal={openEditModal} // se pasa la función para iniciar la edición
+              openEditModal={openEditModal}
             />
           ))
         ) : (
@@ -153,7 +162,14 @@ const Catalogo = () => {
         )}
       </Row>
 
-      {/* Modal de edición reutilizando ModalEdicionProducto */}
+      <Paginacion
+        itemsPerPage={itemsPerPage}
+        totalItems={productosFiltrados.length}
+        currentPage={currentPage}
+        setCurrentPage={setCurrentPage}
+      />
+
+      {/* Modal de edición */}
       <ModalEdicionProducto
         showEditModal={showEditModal}
         setShowEditModal={setShowEditModal}

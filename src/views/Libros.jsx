@@ -10,11 +10,19 @@ import {
   deleteDoc,
   doc,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import {
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+} from "firebase/storage";
+
+// Componentes personalizados
 import TablaLibros from "../components/libros/TablaLibros";
 import ModalRegistroLibro from "../components/libros/ModalRegistroLibro";
 import ModalEdicionLibro from "../components/libros/ModalEdicionLibro";
 import ModalEliminacionLibro from "../components/libros/ModalEliminacionLibro";
+import Paginacion from "../components/ordenamiento/Paginacion";
 import { useAuth } from "../database/authcontext";
 
 const Libros = () => {
@@ -34,9 +42,11 @@ const Libros = () => {
   const [pdfFile, setPdfFile] = useState(null);
   const [error, setError] = useState(null);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
+
   const { isLoggedIn } = useAuth();
   const navigate = useNavigate();
-
   const librosCollection = collection(db, "libros");
 
   const fetchData = async () => {
@@ -59,7 +69,7 @@ const Libros = () => {
     } else {
       fetchData();
     }
-  }, );
+  },);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -127,15 +137,18 @@ const Libros = () => {
       alert("Por favor, completa todos los campos requeridos.");
       return;
     }
+
     try {
       const libroRef = doc(db, "libros", libroEditado.id);
+
       if (pdfFile) {
         if (libroEditado.pdfUrl) {
           const oldPdfRef = ref(storage, libroEditado.pdfUrl);
-          await deleteObject(oldPdfRef).catch((error) => {
-            console.error("Error al eliminar el PDF anterior:", error);
-          });
+          await deleteObject(oldPdfRef).catch((error) =>
+            console.error("Error al eliminar el PDF anterior:", error)
+          );
         }
+
         const storageRef = ref(storage, `libros/${pdfFile.name}`);
         await uploadBytes(storageRef, pdfFile);
         const newPdfUrl = await getDownloadURL(storageRef);
@@ -143,6 +156,7 @@ const Libros = () => {
       } else {
         await updateDoc(libroRef, libroEditado);
       }
+
       setShowEditModal(false);
       setPdfFile(null);
       await fetchData();
@@ -162,12 +176,14 @@ const Libros = () => {
     if (libroAEliminar) {
       try {
         const libroRef = doc(db, "libros", libroAEliminar.id);
+
         if (libroAEliminar.pdfUrl) {
           const pdfRef = ref(storage, libroAEliminar.pdfUrl);
-          await deleteObject(pdfRef).catch((error) => {
-            console.error("Error al eliminar el PDF de Storage:", error);
-          });
+          await deleteObject(pdfRef).catch((error) =>
+            console.error("Error al eliminar el PDF de Storage:", error)
+          );
         }
+
         await deleteDoc(libroRef);
         setShowDeleteModal(false);
         await fetchData();
@@ -188,9 +204,15 @@ const Libros = () => {
     setShowDeleteModal(true);
   };
 
-  // Filtrado de libros según el término de búsqueda
+  // Filtrado de libros
   const librosFiltrados = libros.filter((libro) =>
     libro.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Libros paginados
+  const paginatedLibros = librosFiltrados.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
   );
 
   return (
@@ -198,7 +220,7 @@ const Libros = () => {
       <br />
       <h4>Gestión de Libros</h4>
       {error && <Alert variant="danger">{error}</Alert>}
-      {/* Cuadro de búsqueda */}
+
       <Form.Group className="mb-3" controlId="formSearchLibro">
         <Form.Control
           type="text"
@@ -207,14 +229,25 @@ const Libros = () => {
           onChange={(e) => setSearchTerm(e.target.value)}
         />
       </Form.Group>
+
       <Button className="mb-3" onClick={() => setShowModal(true)}>
         Agregar libro
       </Button>
-      <TablaLibros
-        libros={librosFiltrados}
-        openEditModal={openEditModal}
-        openDeleteModal={openDeleteModal}
-      />
+
+      <>
+        <TablaLibros
+          libros={paginatedLibros}
+          openEditModal={openEditModal}
+          openDeleteModal={openDeleteModal}
+        />
+        <Paginacion
+          itemsPerPage={itemsPerPage}
+          totalItems={librosFiltrados.length}
+          currentPage={currentPage}
+          setCurrentPage={setCurrentPage}
+        />
+      </>
+
       <ModalRegistroLibro
         showModal={showModal}
         setShowModal={setShowModal}
