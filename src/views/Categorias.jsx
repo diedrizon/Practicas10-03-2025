@@ -1,13 +1,15 @@
+// Categorias.jsx
+
 import React, { useState, useEffect } from "react";
 import { Container, Button, Form } from "react-bootstrap";
 import { db } from "../database/firebaseconfig";
 import {
   collection,
-  getDocs,
   addDoc,
   updateDoc,
   deleteDoc,
   doc,
+  onSnapshot,
 } from "firebase/firestore";
 
 // Importaciones de componentes personalizados
@@ -19,7 +21,7 @@ import Paginacion from "../components/ordenamiento/Paginacion";
 
 const Categorias = () => {
   // Estados para manejo de datos
-  const [categorias, setCategorias] = useState([]);
+  const [categoriasFiltradas, setCategoriasFiltradas] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -31,30 +33,57 @@ const Categorias = () => {
   const [categoriaEditada, setCategoriaEditada] = useState(null);
   const [categoriaAEliminar, setCategoriaAEliminar] = useState(null);
 
-  // Estados para paginación
+  // Estado para conexión
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    setIsOffline(!navigator.onLine);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
 
-  // Referencia a la colección de categorías en Firestore
   const categoriasCollection = collection(db, "categorias");
 
-  // Función para obtener todas las categorías de Firestore
-  const fetchCategorias = async () => {
-    try {
-      const data = await getDocs(categoriasCollection);
-      const fetchedCategorias = data.docs.map((doc) => ({
-        ...doc.data(),
-        id: doc.id,
-      }));
-      setCategorias(fetchedCategorias);
-    } catch (error) {
-      console.error("Error al obtener las categorías:", error);
-    }
+  const fetchCategorias = () => {
+    const unsubscribe = onSnapshot(
+      categoriasCollection,
+      (snapshot) => {
+        const fetchedCategorias = snapshot.docs.map((doc) => ({
+          ...doc.data(),
+          id: doc.id,
+        }));
+        setCategoriasFiltradas(fetchedCategorias);
+        console.log("Categorías cargadas desde Firestore:", fetchedCategorias);
+        if (isOffline) {
+          console.log("Offline: Mostrando datos desde la caché local.");
+        }
+      },
+      (error) => {
+        console.error("Error al escuchar categorías:", error);
+        if (isOffline) {
+          console.log("Offline: Mostrando datos desde la caché local.");
+        } else {
+          alert("Error al cargar las categorías: " + error.message);
+        }
+      }
+    );
+    return unsubscribe;
   };
 
   useEffect(() => {
-    fetchCategorias();
-  },);
+    const cleanupListener = fetchCategorias();
+    return () => cleanupListener();
+  });
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -77,40 +106,117 @@ const Categorias = () => {
       alert("Por favor, completa todos los campos antes de guardar.");
       return;
     }
+
+    setShowModal(false);
+
+    const tempId = `temp_${Date.now()}`;
+    const categoriaConId = { ...nuevaCategoria, id: tempId };
+
     try {
-      await addDoc(categoriasCollection, nuevaCategoria);
-      setShowModal(false);
+      setCategoriasFiltradas((prev) => [...prev, categoriaConId]);
       setNuevaCategoria({ nombre: "", descripcion: "" });
-      await fetchCategorias();
+
+      await addDoc(categoriasCollection, nuevaCategoria);
+
+      if (isOffline) {
+        console.log("Categoría agregada localmente (sin conexión).");
+      } else {
+        console.log("Categoría agregada exitosamente en la nube.");
+      }
     } catch (error) {
       console.error("Error al agregar la categoría:", error);
+      if (isOffline) {
+        console.log("Offline: Categoría almacenada localmente.");
+      } else {
+        setCategoriasFiltradas((prev) =>
+          prev.filter((cat) => cat.id !== tempId)
+        );
+        alert("Error al agregar la categoría: " + error.message);
+      }
     }
   };
 
   const handleEditCategoria = async () => {
-    if (!categoriaEditada.nombre || !categoriaEditada.descripcion) {
+    if (!categoriaEditada?.nombre || !categoriaEditada?.descripcion) {
       alert("Por favor, completa todos los campos antes de actualizar.");
       return;
     }
+
+    // 🚨 Verificar si es ID temporal
+    if (categoriaEditada.id.startsWith("temp_")) {
+      alert(
+        "Esta categoría todavía no se ha sincronizado con la nube. Intenta más tarde."
+      );
+      return;
+    }
+
+    setShowEditModal(false);
+
+    const categoriaRef = doc(db, "categorias", categoriaEditada.id);
+
     try {
-      const categoriaRef = doc(db, "categorias", categoriaEditada.id);
-      await updateDoc(categoriaRef, categoriaEditada);
-      setShowEditModal(false);
-      await fetchCategorias();
+      await updateDoc(categoriaRef, {
+        nombre: categoriaEditada.nombre,
+        descripcion: categoriaEditada.descripcion,
+      });
+
+      if (isOffline) {
+        setCategoriasFiltradas((prev) =>
+          prev.map((cat) =>
+            cat.id === categoriaEditada.id ? { ...categoriaEditada } : cat
+          )
+        );
+        console.log("Categoría actualizada localmente (sin conexión).");
+        alert(
+          "Sin conexión: Categoría actualizada localmente. Se sincronizará cuando haya internet."
+        );
+      } else {
+        console.log("Categoría actualizada exitosamente en la nube.");
+      }
     } catch (error) {
       console.error("Error al actualizar la categoría:", error);
+      setCategoriasFiltradas((prev) =>
+        prev.map((cat) =>
+          cat.id === categoriaEditada.id ? { ...categoriaEditada } : cat
+        )
+      );
+      alert("Ocurrió un error al actualizar la categoría: " + error.message);
     }
   };
 
   const handleDeleteCategoria = async () => {
-    if (categoriaAEliminar) {
-      try {
-        const categoriaRef = doc(db, "categorias", categoriaAEliminar.id);
-        await deleteDoc(categoriaRef);
-        setShowDeleteModal(false);
-        await fetchCategorias();
-      } catch (error) {
-        console.error("Error al eliminar la categoría:", error);
+    if (!categoriaAEliminar) return;
+
+    // 🚨 Verificar si es ID temporal
+    if (categoriaAEliminar.id.startsWith("temp_")) {
+      alert(
+        "Esta categoría todavía no se ha sincronizado con la nube. Intenta más tarde."
+      );
+      return;
+    }
+
+    setShowDeleteModal(false);
+
+    try {
+      setCategoriasFiltradas((prev) =>
+        prev.filter((cat) => cat.id !== categoriaAEliminar.id)
+      );
+
+      const categoriaRef = doc(db, "categorias", categoriaAEliminar.id);
+      await deleteDoc(categoriaRef);
+
+      if (isOffline) {
+        console.log("Categoría eliminada localmente (sin conexión).");
+      } else {
+        console.log("Categoría eliminada exitosamente en la nube.");
+      }
+    } catch (error) {
+      console.error("Error al eliminar la categoría:", error);
+      if (isOffline) {
+        console.log("Offline: Eliminación almacenada localmente.");
+      } else {
+        setCategoriasFiltradas((prev) => [...prev, categoriaAEliminar]);
+        alert("Error al eliminar la categoría: " + error.message);
       }
     }
   };
@@ -126,12 +232,11 @@ const Categorias = () => {
   };
 
   // Filtrado de categorías
-  const categoriasFiltradas = categorias.filter((categoria) =>
+  const categoriasFiltradasFinal = categoriasFiltradas.filter((categoria) =>
     categoria.nombre.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Calcular categorías paginadas
-  const paginatedCategorias = categoriasFiltradas.slice(
+  const paginatedCategorias = categoriasFiltradasFinal.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
@@ -160,7 +265,7 @@ const Categorias = () => {
         />
         <Paginacion
           itemsPerPage={itemsPerPage}
-          totalItems={categoriasFiltradas.length}
+          totalItems={categoriasFiltradasFinal.length}
           currentPage={currentPage}
           setCurrentPage={setCurrentPage}
         />

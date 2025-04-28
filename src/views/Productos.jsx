@@ -1,23 +1,25 @@
+// Productos.jsx
+
 import React, { useState, useEffect } from "react";
 import { Container, Button, Form } from "react-bootstrap";
 import { db } from "../database/firebaseconfig";
 import {
   collection,
-  getDocs,
   addDoc,
   updateDoc,
   deleteDoc,
   doc,
+  onSnapshot,
 } from "firebase/firestore";
 
 import TablaProductos from "../components/productos/TablaProductos";
 import ModalRegistroProducto from "../components/productos/ModalRegistroProducto";
 import ModalEdicionProducto from "../components/productos/ModalEdicionProducto";
 import ModalEliminacionProducto from "../components/productos/ModalEliminacionProducto";
-import Paginacion from "../components/ordenamiento/Paginacion"; // ✅ Importar paginación
+import Paginacion from "../components/ordenamiento/Paginacion";
 
 const Productos = () => {
-  // Estados para manejo de datos
+  // Estados
   const [productos, setProductos] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [categorias, setCategorias] = useState([]);
@@ -28,42 +30,85 @@ const Productos = () => {
     nombre: "",
     precio: "",
     categoria: "",
-    imagen: ""
+    imagen: "",
   });
   const [productoEditado, setProductoEditado] = useState(null);
   const [productoAEliminar, setProductoAEliminar] = useState(null);
-
-  // Estados para paginación
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
-  // Referencia a las colecciones en Firestore
   const productosCollection = collection(db, "productos");
   const categoriasCollection = collection(db, "categorias");
 
-  const fetchData = async () => {
-    try {
-      const productosData = await getDocs(productosCollection);
-      const fetchedProductos = productosData.docs.map((doc) => ({
-        ...doc.data(),
-        id: doc.id,
-      }));
-      setProductos(fetchedProductos);
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    setIsOffline(!navigator.onLine);
 
-      const categoriasData = await getDocs(categoriasCollection);
-      const fetchedCategorias = categoriasData.docs.map((doc) => ({
-        ...doc.data(),
-        id: doc.id,
-      }));
-      setCategorias(fetchedCategorias);
-    } catch (error) {
-      console.error("Error al obtener datos:", error);
-    }
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  const fetchData = () => {
+    const unsubscribeProductos = onSnapshot(
+      productosCollection,
+      (snapshot) => {
+        const fetchedProductos = snapshot.docs.map((doc) => ({
+          ...doc.data(),
+          id: doc.id,
+        }));
+        setProductos(fetchedProductos);
+        if (isOffline) {
+          console.log("Offline: Productos cargados desde caché local.");
+        }
+      },
+      (error) => {
+        console.error("Error al escuchar productos:", error);
+        if (isOffline) {
+          console.log("Offline: Mostrando productos desde caché local.");
+        } else {
+          alert("Error al cargar productos: " + error.message);
+        }
+      }
+    );
+
+    const unsubscribeCategorias = onSnapshot(
+      categoriasCollection,
+      (snapshot) => {
+        const fetchedCategorias = snapshot.docs.map((doc) => ({
+          ...doc.data(),
+          id: doc.id,
+        }));
+        setCategorias(fetchedCategorias);
+        if (isOffline) {
+          console.log("Offline: Categorías cargadas desde caché local.");
+        }
+      },
+      (error) => {
+        console.error("Error al escuchar categorías:", error);
+        if (isOffline) {
+          console.log("Offline: Mostrando categorías desde caché local.");
+        } else {
+          alert("Error al cargar categorías: " + error.message);
+        }
+      }
+    );
+
+    return () => {
+      unsubscribeProductos();
+      unsubscribeCategorias();
+    };
   };
 
   useEffect(() => {
-    fetchData();
-  },);
+    const cleanupListener = fetchData();
+    return () => cleanupListener();
+  });
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -98,44 +143,138 @@ const Productos = () => {
   };
 
   const handleAddProducto = async () => {
-    if (!nuevoProducto.nombre || !nuevoProducto.precio || !nuevoProducto.categoria) {
+    if (
+      !nuevoProducto.nombre ||
+      !nuevoProducto.precio ||
+      !nuevoProducto.categoria
+    ) {
       alert("Por favor, completa todos los campos requeridos.");
       return;
     }
+
+    setShowModal(false);
+
+    const tempId = `temp_${Date.now()}`;
+    const productoConId = { ...nuevoProducto, id: tempId };
+
     try {
-      await addDoc(productosCollection, nuevoProducto);
-      setShowModal(false);
+      setProductos((prev) => [...prev, productoConId]);
+
       setNuevoProducto({ nombre: "", precio: "", categoria: "", imagen: "" });
-      await fetchData();
+
+      await addDoc(productosCollection, {
+        nombre: nuevoProducto.nombre,
+        precio: parseFloat(nuevoProducto.precio),
+        categoria: nuevoProducto.categoria,
+        imagen: nuevoProducto.imagen,
+      });
+
+      if (isOffline) {
+        console.log("Producto agregado localmente (sin conexión).");
+      } else {
+        console.log("Producto agregado exitosamente en la nube.");
+      }
     } catch (error) {
       console.error("Error al agregar producto:", error);
+      if (isOffline) {
+        console.log("Offline: Producto almacenado localmente.");
+      } else {
+        setProductos((prev) => prev.filter((prod) => prod.id !== tempId));
+        alert("Error al agregar el producto: " + error.message);
+      }
     }
   };
 
   const handleEditProducto = async () => {
-    if (!productoEditado.nombre || !productoEditado.precio || !productoEditado.categoria) {
+    if (
+      !productoEditado?.nombre ||
+      !productoEditado?.precio ||
+      !productoEditado?.categoria
+    ) {
       alert("Por favor, completa todos los campos requeridos.");
       return;
     }
+
+    if (productoEditado.id.startsWith("temp_")) {
+      alert(
+        "Este producto todavía no se ha sincronizado con la nube. Intenta más tarde."
+      );
+      return;
+    }
+
+    setShowEditModal(false);
+
+    const productoRef = doc(db, "productos", productoEditado.id);
+
     try {
-      const productoRef = doc(db, "productos", productoEditado.id);
-      await updateDoc(productoRef, productoEditado);
-      setShowEditModal(false);
-      await fetchData();
+      await updateDoc(productoRef, {
+        nombre: productoEditado.nombre,
+        precio: parseFloat(productoEditado.precio),
+        categoria: productoEditado.categoria,
+        imagen: productoEditado.imagen,
+      });
+
+      if (isOffline) {
+        setProductos((prev) =>
+          prev.map((prod) =>
+            prod.id === productoEditado.id
+              ? {
+                  ...productoEditado,
+                  precio: parseFloat(productoEditado.precio),
+                }
+              : prod
+          )
+        );
+        console.log("Producto actualizado localmente (sin conexión).");
+        alert(
+          "Sin conexión: Producto actualizado localmente. Se sincronizará al reconectar."
+        );
+      } else {
+        console.log("Producto actualizado exitosamente en la nube.");
+      }
     } catch (error) {
       console.error("Error al actualizar producto:", error);
+      setProductos((prev) =>
+        prev.map((prod) =>
+          prod.id === productoEditado.id ? { ...prod } : prod
+        )
+      );
+      alert("Error al actualizar el producto: " + error.message);
     }
   };
 
   const handleDeleteProducto = async () => {
-    if (productoAEliminar) {
-      try {
-        const productoRef = doc(db, "productos", productoAEliminar.id);
-        await deleteDoc(productoRef);
-        setShowDeleteModal(false);
-        await fetchData();
-      } catch (error) {
-        console.error("Error al eliminar producto:", error);
+    if (!productoAEliminar) return;
+
+    if (productoAEliminar.id.startsWith("temp_")) {
+      alert(
+        "Este producto todavía no se ha sincronizado con la nube. Intenta más tarde."
+      );
+      return;
+    }
+
+    setShowDeleteModal(false);
+
+    try {
+      setProductos((prev) =>
+        prev.filter((prod) => prod.id !== productoAEliminar.id)
+      );
+
+      const productoRef = doc(db, "productos", productoAEliminar.id);
+      await deleteDoc(productoRef);
+
+      if (isOffline) {
+        console.log("Producto eliminado localmente (sin conexión).");
+      } else {
+        console.log("Producto eliminado exitosamente en la nube.");
+      }
+    } catch (error) {
+      console.error("Error al eliminar producto:", error);
+      if (isOffline) {
+        console.log("Offline: Eliminación almacenada localmente.");
+      } else {
+        setProductos((prev) => [...prev, productoAEliminar]);
+        alert("Error al eliminar el producto: " + error.message);
       }
     }
   };
@@ -150,12 +289,10 @@ const Productos = () => {
     setShowDeleteModal(true);
   };
 
-  // Filtrado de productos
   const productosFiltrados = productos.filter((producto) =>
     producto.nombre.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Productos paginados
   const paginatedProductos = productosFiltrados.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage

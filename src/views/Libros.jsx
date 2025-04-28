@@ -1,14 +1,16 @@
+// Libros.jsx
+
 import React, { useState, useEffect } from "react";
 import { Container, Button, Alert, Form } from "react-bootstrap";
 import { useNavigate } from "react-router-dom";
 import { db, storage } from "../database/firebaseconfig";
 import {
   collection,
-  getDocs,
   addDoc,
   updateDoc,
   deleteDoc,
   doc,
+  onSnapshot,
 } from "firebase/firestore";
 import {
   ref,
@@ -17,7 +19,6 @@ import {
   deleteObject,
 } from "firebase/storage";
 
-// Componentes personalizados
 import TablaLibros from "../components/libros/TablaLibros";
 import ModalRegistroLibro from "../components/libros/ModalRegistroLibro";
 import ModalEdicionLibro from "../components/libros/ModalEdicionLibro";
@@ -41,6 +42,7 @@ const Libros = () => {
   const [libroAEliminar, setLibroAEliminar] = useState(null);
   const [pdfFile, setPdfFile] = useState(null);
   const [error, setError] = useState(null);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
@@ -49,27 +51,55 @@ const Libros = () => {
   const navigate = useNavigate();
   const librosCollection = collection(db, "libros");
 
-  const fetchData = async () => {
-    try {
-      const librosData = await getDocs(librosCollection);
-      const fetchedLibros = librosData.docs.map((doc) => ({
-        ...doc.data(),
-        id: doc.id,
-      }));
-      setLibros(fetchedLibros);
-    } catch (error) {
-      console.error("Error al obtener datos:", error);
-      setError("Error al cargar los datos. Intenta de nuevo.");
-    }
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    setIsOffline(!navigator.onLine);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  const fetchData = () => {
+    const unsubscribeLibros = onSnapshot(
+      librosCollection,
+      (snapshot) => {
+        const fetchedLibros = snapshot.docs.map((doc) => ({
+          ...doc.data(),
+          id: doc.id,
+        }));
+        setLibros(fetchedLibros);
+        if (isOffline) {
+          console.log("Offline: Libros cargados desde caché local.");
+        }
+      },
+      (error) => {
+        console.error("Error al escuchar libros:", error);
+        if (isOffline) {
+          console.log("Offline: Mostrando libros desde caché local.");
+        } else {
+          setError("Error al cargar los datos. Intenta de nuevo.");
+        }
+      }
+    );
+
+    return () => {
+      unsubscribeLibros();
+    };
   };
 
   useEffect(() => {
     if (!isLoggedIn) {
       navigate("/login");
     } else {
-      fetchData();
+      const cleanupListener = fetchData();
+      return () => cleanupListener();
     }
-  },);
+  });
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -106,23 +136,46 @@ const Libros = () => {
       return;
     }
 
-    if (!nuevoLibro.nombre || !nuevoLibro.autor || !nuevoLibro.genero || !pdfFile) {
+    if (
+      !nuevoLibro.nombre ||
+      !nuevoLibro.autor ||
+      !nuevoLibro.genero ||
+      !pdfFile
+    ) {
       alert("Por favor, completa todos los campos y selecciona un PDF.");
       return;
     }
+
+    setShowModal(false);
+
+    const tempId = `temp_${Date.now()}`;
+    const libroConId = { ...nuevoLibro, id: tempId };
+
     try {
+      setLibros((prev) => [...prev, libroConId]);
+
       const storageRef = ref(storage, `libros/${pdfFile.name}`);
       await uploadBytes(storageRef, pdfFile);
       const pdfUrl = await getDownloadURL(storageRef);
 
       await addDoc(librosCollection, { ...nuevoLibro, pdfUrl });
-      setShowModal(false);
+
       setNuevoLibro({ nombre: "", autor: "", genero: "", pdfUrl: "" });
       setPdfFile(null);
-      await fetchData();
+
+      if (isOffline) {
+        console.log("Libro agregado localmente (sin conexión).");
+      } else {
+        console.log("Libro agregado exitosamente en la nube.");
+      }
     } catch (error) {
       console.error("Error al agregar libro:", error);
-      setError("Error al agregar el libro. Intenta de nuevo.");
+      if (isOffline) {
+        console.log("Offline: Libro almacenado localmente.");
+      } else {
+        setLibros((prev) => prev.filter((libro) => libro.id !== tempId));
+        setError("Error al agregar el libro. Intenta de nuevo.");
+      }
     }
   };
 
@@ -133,10 +186,23 @@ const Libros = () => {
       return;
     }
 
-    if (!libroEditado.nombre || !libroEditado.autor || !libroEditado.genero) {
+    if (
+      !libroEditado?.nombre ||
+      !libroEditado?.autor ||
+      !libroEditado?.genero
+    ) {
       alert("Por favor, completa todos los campos requeridos.");
       return;
     }
+
+    if (libroEditado.id.startsWith("temp_")) {
+      alert(
+        "Este libro todavía no se ha sincronizado con la nube. Intenta más tarde."
+      );
+      return;
+    }
+
+    setShowEditModal(false);
 
     try {
       const libroRef = doc(db, "libros", libroEditado.id);
@@ -152,14 +218,22 @@ const Libros = () => {
         const storageRef = ref(storage, `libros/${pdfFile.name}`);
         await uploadBytes(storageRef, pdfFile);
         const newPdfUrl = await getDownloadURL(storageRef);
+
         await updateDoc(libroRef, { ...libroEditado, pdfUrl: newPdfUrl });
       } else {
         await updateDoc(libroRef, libroEditado);
       }
 
-      setShowEditModal(false);
       setPdfFile(null);
-      await fetchData();
+
+      if (isOffline) {
+        console.log("Libro actualizado localmente (sin conexión).");
+        alert(
+          "Sin conexión: Libro actualizado localmente. Se sincronizará al reconectar."
+        );
+      } else {
+        console.log("Libro actualizado exitosamente en la nube.");
+      }
     } catch (error) {
       console.error("Error al actualizar libro:", error);
       setError("Error al actualizar el libro. Intenta de nuevo.");
@@ -173,24 +247,37 @@ const Libros = () => {
       return;
     }
 
-    if (libroAEliminar) {
-      try {
-        const libroRef = doc(db, "libros", libroAEliminar.id);
+    if (!libroAEliminar) return;
 
-        if (libroAEliminar.pdfUrl) {
-          const pdfRef = ref(storage, libroAEliminar.pdfUrl);
-          await deleteObject(pdfRef).catch((error) =>
-            console.error("Error al eliminar el PDF de Storage:", error)
-          );
-        }
+    if (libroAEliminar.id.startsWith("temp_")) {
+      alert(
+        "Este libro todavía no se ha sincronizado con la nube. Intenta más tarde."
+      );
+      return;
+    }
 
-        await deleteDoc(libroRef);
-        setShowDeleteModal(false);
-        await fetchData();
-      } catch (error) {
-        console.error("Error al eliminar libro:", error);
-        setError("Error al eliminar el libro. Intenta de nuevo.");
+    setShowDeleteModal(false);
+
+    try {
+      const libroRef = doc(db, "libros", libroAEliminar.id);
+
+      if (libroAEliminar.pdfUrl) {
+        const pdfRef = ref(storage, libroAEliminar.pdfUrl);
+        await deleteObject(pdfRef).catch((error) =>
+          console.error("Error al eliminar el PDF de Storage:", error)
+        );
       }
+
+      await deleteDoc(libroRef);
+
+      if (isOffline) {
+        console.log("Libro eliminado localmente (sin conexión).");
+      } else {
+        console.log("Libro eliminado exitosamente en la nube.");
+      }
+    } catch (error) {
+      console.error("Error al eliminar libro:", error);
+      setError("Error al eliminar el libro. Intenta de nuevo.");
     }
   };
 
@@ -204,12 +291,10 @@ const Libros = () => {
     setShowDeleteModal(true);
   };
 
-  // Filtrado de libros
   const librosFiltrados = libros.filter((libro) =>
     libro.nombre.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Libros paginados
   const paginatedLibros = librosFiltrados.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
