@@ -2,7 +2,7 @@ import React from "react";
 import { Table, Button } from "react-bootstrap";
 import "bootstrap-icons/font/bootstrap-icons.css";
 
-const TablaLibros = ({ libros, openEditModal, openDeleteModal }) => {
+const TablaLibros = ({ libros, openEditModal, openDeleteModal, openQRModal }) => {
   return (
     <Table striped bordered hover responsive>
       <thead>
@@ -22,9 +22,19 @@ const TablaLibros = ({ libros, openEditModal, openDeleteModal }) => {
             <td>{libro.genero}</td>
             <td>
               {libro.pdfUrl && (
-                <a href={libro.pdfUrl} target="_blank" rel="noopener noreferrer">
-                  Ver PDF
-                </a>
+                <>
+                  <a href={libro.pdfUrl} target="_blank" rel="noopener noreferrer">
+                    Ver PDF
+                  </a>
+                  <Button
+                    variant="outline-info"
+                    size="sm"
+                    className="ms-2"
+                    onClick={() => openQRModal(libro.pdfUrl)}
+                  >
+                    <i className="bi bi-qr-code"></i>
+                  </Button>
+                </>
               )}
             </td>
             <td>

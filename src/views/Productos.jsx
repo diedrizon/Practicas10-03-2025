@@ -289,6 +289,13 @@ const Productos = () => {
     setShowDeleteModal(true);
   };
 
+  const handleCopy = (producto) => {
+    const texto = `Nombre: ${producto.nombre}, Precio: C$${producto.precio}, Categoría: ${producto.categoria}`;
+    navigator.clipboard.writeText(texto).then(() => {
+      alert("Datos copiados al portapapeles.");
+    });
+  };
+
   const productosFiltrados = productos.filter((producto) =>
     producto.nombre.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -321,6 +328,7 @@ const Productos = () => {
           productos={paginatedProductos}
           openEditModal={openEditModal}
           openDeleteModal={openDeleteModal}
+          handleCopy={handleCopy}
         />
         <Paginacion
           itemsPerPage={itemsPerPage}

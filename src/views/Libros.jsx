@@ -25,6 +25,7 @@ import ModalEdicionLibro from "../components/libros/ModalEdicionLibro";
 import ModalEliminacionLibro from "../components/libros/ModalEliminacionLibro";
 import Paginacion from "../components/ordenamiento/Paginacion";
 import { useAuth } from "../database/authcontext";
+import ModalQR from "../components/qr/ModalQR";
 
 const Libros = () => {
   const [libros, setLibros] = useState([]);
@@ -50,6 +51,8 @@ const Libros = () => {
   const { isLoggedIn } = useAuth();
   const navigate = useNavigate();
   const librosCollection = collection(db, "libros");
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [qrUrl, setQrUrl] = useState("");
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -63,6 +66,16 @@ const Libros = () => {
       window.removeEventListener("offline", handleOffline);
     };
   }, []);
+
+  const openQRModal = (url) => {
+    setQrUrl(url);
+    setShowQRModal(true);
+  };
+
+  const closeQRModal = () => {
+    setQrUrl("");
+    setShowQRModal(false);
+  };
 
   const fetchData = () => {
     const unsubscribeLibros = onSnapshot(
@@ -324,7 +337,9 @@ const Libros = () => {
           libros={paginatedLibros}
           openEditModal={openEditModal}
           openDeleteModal={openDeleteModal}
+          openQRModal={openQRModal}
         />
+
         <Paginacion
           itemsPerPage={itemsPerPage}
           totalItems={librosFiltrados.length}
@@ -354,6 +369,7 @@ const Libros = () => {
         setShowDeleteModal={setShowDeleteModal}
         handleDeleteLibro={handleDeleteLibro}
       />
+      <ModalQR show={showQRModal} onHide={closeQRModal} url={qrUrl} />
     </Container>
   );
 };
