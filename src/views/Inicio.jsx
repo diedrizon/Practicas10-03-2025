@@ -68,6 +68,7 @@ const Inicio = () => {
       <Button className="m-2" onClick={() => handleNavigate("/catalogo")}>Ir a Catálogo</Button>
       <Button className="m-2" onClick={() => handleNavigate("/libros")}>Ir a Libros</Button>
       <Button className="m-2" onClick={() => handleNavigate("/clima")}>Ir a Clima</Button>
+      <Button className="m-2" onClick={() => handleNavigate("/estadisticas")}>Ir a Estadísticas</Button>
 
       <br />
 
