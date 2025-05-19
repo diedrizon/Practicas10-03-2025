@@ -1,7 +1,7 @@
 // Categorias.jsx
 
 import React, { useState, useEffect } from "react";
-import { Container, Button, Form } from "react-bootstrap";
+import { Container, Button, Form, Col } from "react-bootstrap";
 import { db } from "../database/firebaseconfig";
 import {
   collection,
@@ -18,6 +18,7 @@ import ModalRegistroCategoria from "../components/categorias/ModalRegistroCatego
 import ModalEdicionCategoria from "../components/categorias/ModalEdicionCategoria";
 import ModalEliminacionCategoria from "../components/categorias/ModalEliminacionCategoria";
 import Paginacion from "../components/ordenamiento/Paginacion";
+import ChatIA from "../components/chat/ChatIA";
 
 const Categorias = () => {
   // Estados para manejo de datos
@@ -32,6 +33,7 @@ const Categorias = () => {
   });
   const [categoriaEditada, setCategoriaEditada] = useState(null);
   const [categoriaAEliminar, setCategoriaAEliminar] = useState(null);
+  const [showChatModal, setShowChatModal] = useState(false);
 
   // Estado para conexión
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
@@ -256,6 +258,11 @@ const Categorias = () => {
       <Button className="mb-3" onClick={() => setShowModal(true)}>
         Agregar categoría
       </Button>
+      <Col lg={3} md={4} sm={4} xs={5}>
+        <Button className="mb-3" onClick={() => setShowChatModal(true)} style={{ width: "100%" }}>
+          Chat IA
+        </Button>
+      </Col>
 
       <>
         <TablaCategorias
@@ -290,6 +297,7 @@ const Categorias = () => {
         setShowDeleteModal={setShowDeleteModal}
         handleDeleteCategoria={handleDeleteCategoria}
       />
+      <ChatIA showChatModal={showChatModal} setShowChatModal={setShowChatModal} />
     </Container>
   );
 };
