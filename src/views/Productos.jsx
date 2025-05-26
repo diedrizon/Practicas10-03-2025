@@ -1,7 +1,7 @@
 // Productos.jsx
 
 import React, { useState, useEffect } from "react";
-import { Container, Button, Form } from "react-bootstrap";
+import { Container, Button, Form, Row, Col } from "react-bootstrap";
 import { db } from "../database/firebaseconfig";
 import {
   collection,
@@ -12,6 +12,11 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+
 import TablaProductos from "../components/productos/TablaProductos";
 import ModalRegistroProducto from "../components/productos/ModalRegistroProducto";
 import ModalEdicionProducto from "../components/productos/ModalEdicionProducto";
@@ -19,7 +24,6 @@ import ModalEliminacionProducto from "../components/productos/ModalEliminacionPr
 import Paginacion from "../components/ordenamiento/Paginacion";
 
 const Productos = () => {
-  // Estados
   const [productos, setProductos] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [categorias, setCategorias] = useState([]);
@@ -41,146 +45,229 @@ const Productos = () => {
   const productosCollection = collection(db, "productos");
   const categoriasCollection = collection(db, "categorias");
 
-  useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => setIsOffline(true);
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-    setIsOffline(!navigator.onLine);
+  const productosFiltrados = productos.filter((p) =>
+    p.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  const paginatedProductos = productosFiltrados.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
+  const generarPDFProductos = () => {
+    const doc = new jsPDF();
+    // Encabezado
+    doc.setFillColor(28, 41, 51);
+    doc.rect(0, 0, 220, 30, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(28);
+    doc.text("Lista de Productos", doc.internal.pageSize.getWidth() / 2, 18, {
+      align: "center",
+    });
+
+    // Tabla
+    const columnas = ["#", "Nombre", "Precio", "Categoría"];
+    const filas = productosFiltrados.map((prod, i) => [
+      i + 1,
+      prod.nombre,
+      `C$${prod.precio}`,
+      prod.categoria,
+    ]);
+    const totalPaginas = "{total_pages_count_string}";
+
+    autoTable(doc, {
+      head: [columnas],
+      body: filas,
+      startY: 40,
+      theme: "grid",
+      styles: { fontSize: 10, cellPadding: 2 },
+      margin: { top: 20, left: 14, right: 14 },
+      didDrawPage: (data) => {
+        const h = doc.internal.pageSize.getHeight();
+        const w = doc.internal.pageSize.getWidth();
+        const pageNum = doc.internal.getNumberOfPages();
+        const { pageCount } = data.settings; // Uso de `data` para obtener información de configuración
+        doc.setFontSize(10);
+        doc.setTextColor(0, 0, 0);
+        const footer = `Página ${pageNum} de ${pageCount}`;
+        doc.text(footer, w / 2 + 15, h - 10, { align: "center" });
+      },
+    });
+
+    // Rellena el total real de páginas
+    if (typeof doc.putTotalPages === "function") {
+      doc.putTotalPages(totalPaginas);
+    }
+
+    // Guardar con fecha
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, "0");
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const yyyy = now.getFullYear();
+    doc.save(`productos_${dd}${mm}${yyyy}.pdf`);
+  };
+
+  const generarPDFDetalleProducto = (producto) => {
+    const pdf = new jsPDF();
+    // Encabezado
+    pdf.setFillColor(28, 41, 51);
+    pdf.rect(0, 0, 220, 30, "F");
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(22);
+    pdf.text(producto.nombre, pdf.internal.pageSize.getWidth() / 2, 18, {
+      align: "center",
+    });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    // Imagen (si existe)
+    if (producto.imagen) {
+      const propsImg = pdf.getImageProperties(producto.imagen);
+      const imgW = 60;
+      const imgH = (propsImg.height * imgW) / propsImg.width;
+      const x = (pageWidth - imgW) / 2;
+      pdf.addImage(producto.imagen, "JPEG", x, 40, imgW, imgH);
+
+      // Texto debajo de la imagen
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFontSize(14);
+      pdf.text(`Precio: C$${producto.precio}`, pageWidth / 2, 40 + imgH + 10, {
+        align: "center",
+      });
+      pdf.text(
+        `Categoría: ${producto.categoria}`,
+        pageWidth / 2,
+        40 + imgH + 20,
+        { align: "center" }
+      );
+    } else {
+      // Si no hay imagen, muestra texto más arriba
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFontSize(14);
+      pdf.text(`Precio: C$${producto.precio}`, pageWidth / 2, 50, {
+        align: "center",
+      });
+      pdf.text(`Categoría: ${producto.categoria}`, pageWidth / 2, 60, {
+        align: "center",
+      });
+    }
+
+    pdf.save(`${producto.nombre}.pdf`);
+  };
+
+  const exportarExcelProductos = () => {
+    const datos = productosFiltrados.map((prod, i) => ({
+      "#": i + 1,
+      Nombre: prod.nombre,
+      Precio: parseFloat(prod.precio),
+      Categoría: prod.categoria,
+    }));
+    const sheet = XLSX.utils.json_to_sheet(datos);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, "Productos");
+    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, "0");
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const yyyy = now.getFullYear();
+    const fileName = `Productos_${dd}${mm}${yyyy}.xlsx`;
+
+    const blob = new Blob([wbout], { type: "application/octet-stream" });
+    saveAs(blob, fileName);
+  };
+
+  useEffect(() => {
+    const onOnline = () => setIsOffline(false);
+    const onOffline = () => setIsOffline(true);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    setIsOffline(!navigator.onLine);
     return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
     };
   }, []);
 
   const fetchData = () => {
-    const unsubscribeProductos = onSnapshot(
+    const unsubProd = onSnapshot(
       productosCollection,
-      (snapshot) => {
-        const fetchedProductos = snapshot.docs.map((doc) => ({
-          ...doc.data(),
-          id: doc.id,
-        }));
-        setProductos(fetchedProductos);
-        if (isOffline) {
-          console.log("Offline: Productos cargados desde caché local.");
-        }
+      (snap) => {
+        setProductos(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
+        if (isOffline) console.log("Offline: Productos desde caché");
       },
-      (error) => {
-        console.error("Error al escuchar productos:", error);
-        if (isOffline) {
-          console.log("Offline: Mostrando productos desde caché local.");
-        } else {
-          alert("Error al cargar productos: " + error.message);
-        }
+      (err) => {
+        console.error(err);
+        if (!isOffline) alert("Error al cargar productos: " + err.message);
       }
     );
-
-    const unsubscribeCategorias = onSnapshot(
+    const unsubCat = onSnapshot(
       categoriasCollection,
-      (snapshot) => {
-        const fetchedCategorias = snapshot.docs.map((doc) => ({
-          ...doc.data(),
-          id: doc.id,
-        }));
-        setCategorias(fetchedCategorias);
-        if (isOffline) {
-          console.log("Offline: Categorías cargadas desde caché local.");
-        }
+      (snap) => {
+        setCategorias(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
       },
-      (error) => {
-        console.error("Error al escuchar categorías:", error);
-        if (isOffline) {
-          console.log("Offline: Mostrando categorías desde caché local.");
-        } else {
-          alert("Error al cargar categorías: " + error.message);
-        }
+      (err) => {
+        console.error(err);
+        if (!isOffline) alert("Error al cargar categorías: " + err.message);
       }
     );
-
     return () => {
-      unsubscribeProductos();
-      unsubscribeCategorias();
+      unsubProd();
+      unsubCat();
     };
   };
 
   useEffect(() => {
-    const cleanupListener = fetchData();
-    return () => cleanupListener();
-  });
+    const clean = fetchData();
+    return () => clean();
+  }, [isOffline]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setNuevoProducto((prev) => ({ ...prev, [name]: value }));
+    setNuevoProducto((p) => ({ ...p, [name]: value }));
   };
-
   const handleEditInputChange = (e) => {
     const { name, value } = e.target;
-    setProductoEditado((prev) => ({ ...prev, [name]: value }));
+    setProductoEditado((p) => ({ ...p, [name]: value }));
   };
-
   const handleImageChange = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setNuevoProducto((prev) => ({ ...prev, imagen: reader.result }));
-      };
-      reader.readAsDataURL(file);
-    }
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () =>
+      setNuevoProducto((p) => ({ ...p, imagen: reader.result }));
+    reader.readAsDataURL(file);
   };
-
   const handleEditImageChange = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProductoEditado((prev) => ({ ...prev, imagen: reader.result }));
-      };
-      reader.readAsDataURL(file);
-    }
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () =>
+      setProductoEditado((p) => ({ ...p, imagen: reader.result }));
+    reader.readAsDataURL(file);
   };
 
   const handleAddProducto = async () => {
-    if (
-      !nuevoProducto.nombre ||
-      !nuevoProducto.precio ||
-      !nuevoProducto.categoria
-    ) {
-      alert("Por favor, completa todos los campos requeridos.");
+    const { nombre, precio, categoria } = nuevoProducto;
+    if (!nombre || !precio || !categoria) {
+      alert("Completa todos los campos.");
       return;
     }
-
     setShowModal(false);
-
     const tempId = `temp_${Date.now()}`;
-    const productoConId = { ...nuevoProducto, id: tempId };
-
+    setProductos((p) => [...p, { ...nuevoProducto, id: tempId }]);
+    setNuevoProducto({ nombre: "", precio: "", categoria: "", imagen: "" });
     try {
-      setProductos((prev) => [...prev, productoConId]);
-
-      setNuevoProducto({ nombre: "", precio: "", categoria: "", imagen: "" });
-
       await addDoc(productosCollection, {
-        nombre: nuevoProducto.nombre,
-        precio: parseFloat(nuevoProducto.precio),
-        categoria: nuevoProducto.categoria,
+        nombre,
+        precio: parseFloat(precio),
+        categoria,
         imagen: nuevoProducto.imagen,
       });
-
-      if (isOffline) {
-        console.log("Producto agregado localmente (sin conexión).");
-      } else {
-        console.log("Producto agregado exitosamente en la nube.");
-      }
-    } catch (error) {
-      console.error("Error al agregar producto:", error);
-      if (isOffline) {
-        console.log("Offline: Producto almacenado localmente.");
-      } else {
-        setProductos((prev) => prev.filter((prod) => prod.id !== tempId));
-        alert("Error al agregar el producto: " + error.message);
+      if (!isOffline) console.log("Producto agregado en nube");
+    } catch (err) {
+      console.error(err);
+      if (!isOffline) {
+        setProductos((p) => p.filter((x) => x.id !== tempId));
+        alert("Error al agregar: " + err.message);
       }
     }
   };
@@ -191,123 +278,75 @@ const Productos = () => {
       !productoEditado?.precio ||
       !productoEditado?.categoria
     ) {
-      alert("Por favor, completa todos los campos requeridos.");
+      alert("Completa todos los campos.");
       return;
     }
-
     if (productoEditado.id.startsWith("temp_")) {
-      alert(
-        "Este producto todavía no se ha sincronizado con la nube. Intenta más tarde."
-      );
+      alert("Aún no sincronizado, inténtalo luego.");
       return;
     }
-
     setShowEditModal(false);
-
-    const productoRef = doc(db, "productos", productoEditado.id);
-
+    const ref = doc(db, "productos", productoEditado.id);
     try {
-      await updateDoc(productoRef, {
+      await updateDoc(ref, {
         nombre: productoEditado.nombre,
         precio: parseFloat(productoEditado.precio),
         categoria: productoEditado.categoria,
         imagen: productoEditado.imagen,
       });
-
       if (isOffline) {
-        setProductos((prev) =>
-          prev.map((prod) =>
-            prod.id === productoEditado.id
-              ? {
-                  ...productoEditado,
-                  precio: parseFloat(productoEditado.precio),
-                }
-              : prod
+        setProductos((p) =>
+          p.map((x) =>
+            x.id === productoEditado.id ? { ...productoEditado } : x
           )
         );
-        console.log("Producto actualizado localmente (sin conexión).");
-        alert(
-          "Sin conexión: Producto actualizado localmente. Se sincronizará al reconectar."
-        );
-      } else {
-        console.log("Producto actualizado exitosamente en la nube.");
+        alert("Sin conexión: cambios locales pendientes.");
       }
-    } catch (error) {
-      console.error("Error al actualizar producto:", error);
-      setProductos((prev) =>
-        prev.map((prod) =>
-          prod.id === productoEditado.id ? { ...prod } : prod
-        )
+    } catch (err) {
+      console.error(err);
+      setProductos((p) =>
+        p.map((x) => (x.id === productoEditado.id ? x : x))
       );
-      alert("Error al actualizar el producto: " + error.message);
+      alert("Error al actualizar: " + err.message);
     }
   };
 
   const handleDeleteProducto = async () => {
     if (!productoAEliminar) return;
-
     if (productoAEliminar.id.startsWith("temp_")) {
-      alert(
-        "Este producto todavía no se ha sincronizado con la nube. Intenta más tarde."
-      );
+      alert("Aún no sincronizado, inténtalo luego.");
       return;
     }
-
     setShowDeleteModal(false);
-
+    setProductos((p) =>
+      p.filter((x) => x.id !== productoAEliminar.id)
+    );
     try {
-      setProductos((prev) =>
-        prev.filter((prod) => prod.id !== productoAEliminar.id)
-      );
-
-      const productoRef = doc(db, "productos", productoAEliminar.id);
-      await deleteDoc(productoRef);
-
-      if (isOffline) {
-        console.log("Producto eliminado localmente (sin conexión).");
-      } else {
-        console.log("Producto eliminado exitosamente en la nube.");
-      }
-    } catch (error) {
-      console.error("Error al eliminar producto:", error);
-      if (isOffline) {
-        console.log("Offline: Eliminación almacenada localmente.");
-      } else {
-        setProductos((prev) => [...prev, productoAEliminar]);
-        alert("Error al eliminar el producto: " + error.message);
-      }
+      await deleteDoc(doc(db, "productos", productoAEliminar.id));
+    } catch (err) {
+      console.error(err);
+      setProductos((p) => [...p, productoAEliminar]);
+      alert("Error al eliminar: " + err.message);
     }
   };
 
-  const openEditModal = (producto) => {
-    setProductoEditado({ ...producto });
+  const openEditModal = (prod) => {
+    setProductoEditado({ ...prod });
     setShowEditModal(true);
   };
-
-  const openDeleteModal = (producto) => {
-    setProductoAEliminar(producto);
+  const openDeleteModal = (prod) => {
+    setProductoAEliminar(prod);
     setShowDeleteModal(true);
   };
-
-  const handleCopy = (producto) => {
-    const texto = `Nombre: ${producto.nombre}, Precio: C$${producto.precio}, Categoría: ${producto.categoria}`;
-    navigator.clipboard.writeText(texto).then(() => {
-      alert("Datos copiados al portapapeles.");
+  const handleCopy = (prod) => {
+    const txt = `Nombre: ${prod.nombre}, Precio: C$${prod.precio}, Categoría: ${prod.categoria}`;
+    navigator.clipboard.writeText(txt).then(() => {
+      alert("Copiado al portapapeles.");
     });
   };
 
-  const productosFiltrados = productos.filter((producto) =>
-    producto.nombre.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const paginatedProductos = productosFiltrados.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
   return (
     <Container className="mt-5">
-      <br />
       <h4>Gestión de Productos</h4>
 
       <Form.Group className="mb-3" controlId="formSearchProducto">
@@ -319,24 +358,52 @@ const Productos = () => {
         />
       </Form.Group>
 
-      <Button className="mb-3" onClick={() => setShowModal(true)}>
-        Agregar producto
-      </Button>
+      <Row className="mb-3">
+        <Col lg={3} md={4} sm={4} xs={5}>
+          <Button
+            className="mb-3"
+            onClick={() => setShowModal(true)}
+            style={{ width: "100%" }}
+          >
+            Agregar producto
+          </Button>
+        </Col>
+        <Col lg={3} md={4} sm={4} xs={5}>
+          <Button
+            className="mb-3"
+            variant="secondary"
+            onClick={generarPDFProductos}
+            style={{ width: "100%" }}
+          >
+            Generar reporte PDF
+          </Button>
+        </Col>
+        <Col lg={3} md={4} sm={4} xs={5}>
+          <Button
+            className="mb-3"
+            variant="secondary"
+            onClick={exportarExcelProductos}
+            style={{ width: "100%" }}
+          >
+            Generar Excel
+          </Button>
+        </Col>
+      </Row>
 
-      <>
-        <TablaProductos
-          productos={paginatedProductos}
-          openEditModal={openEditModal}
-          openDeleteModal={openDeleteModal}
-          handleCopy={handleCopy}
-        />
-        <Paginacion
-          itemsPerPage={itemsPerPage}
-          totalItems={productosFiltrados.length}
-          currentPage={currentPage}
-          setCurrentPage={setCurrentPage}
-        />
-      </>
+      <TablaProductos
+        productos={paginatedProductos}
+        openEditModal={openEditModal}
+        openDeleteModal={openDeleteModal}
+        handleCopy={handleCopy}
+        generarPDFDetalleProducto={generarPDFDetalleProducto}
+      />
+
+      <Paginacion
+        itemsPerPage={itemsPerPage}
+        totalItems={productosFiltrados.length}
+        currentPage={currentPage}
+        setCurrentPage={setCurrentPage}
+      />
 
       <ModalRegistroProducto
         showModal={showModal}
